@@ -1,9 +1,1 @@
-from flask import Flask
-app = Flask(__name__)
-
-@app.route('/')
-def hello_world():
-    return 'Hello, World! form version 1'
-
-if __name__ == "__main__":
-   app.run()
+print("Hello this is blue deployment version 1")
