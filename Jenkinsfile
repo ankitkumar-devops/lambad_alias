@@ -44,7 +44,7 @@ pipeline {
         timeout(time: 3, unit: 'MINUTES') {
           script {
             env.traffic_weight = input(
-              message: 'Do you want to deploy to DEV?',
+              message: 'Do you want to Update traffic Weight?',
               parameters: [choice(name: 'traffic_weight', choices: 'YES\nNO')]
             )
           }
@@ -70,8 +70,8 @@ pipeline {
             )
 
             withAWS(credentials: 'aws-cred', region: 'us-east-1') {
-              def latest_version = sh(script: "aws lambda list-versions-by-function --region us-east-1 --function-name dev-irn-${params.CLIENT_NAME}-csv-json --query \"Versions[-1].Version\" --output text", returnStdout: true).trim()
-              def older_version = sh(script: "aws lambda list-versions-by-function --region us-east-1 --function-name dev-irn-${params.CLIENT_NAME}-csv-json --query \"Versions[-2].Version\" --output text", returnStdout: true).trim()
+              def latest_version = sh(script: "aws lambda list-versions-by-function --region us-east-1 --no-paginate --function-name dev-irn-${params.CLIENT_NAME}-csv-json --query \"Versions[-1].Version\" --output text", returnStdout: true).trim()
+              def older_version = sh(script: "aws lambda list-versions-by-function --region us-east-1 --no-paginate --function-name dev-irn-${params.CLIENT_NAME}-csv-json --query \"Versions[-2].Version\" --output text", returnStdout: true).trim()
 
               sh "aws lambda update-alias --name dev-irn-demo1-csv-json-alias --function-name dev-irn-${params.CLIENT_NAME}-csv-json --function-version ${older_version} --routing-config AdditionalVersionWeights={\"${latest_version}\"=\"${env.traffic_weight}\"}"
             }
@@ -130,8 +130,8 @@ pipeline {
                 //     echo "Alias 'csv-json' already exists, skipping creation."
                 // }
 
-                def latest_version = sh(script: "aws lambda list-versions-by-function --region us-east-1 --function-name dev-irn-${params.CLIENT_NAME}-csv-json --query \"Versions[-1].Version\" --output text", returnStdout: true).trim()
-                def older_version = sh(script: "aws lambda list-versions-by-function --region us-east-1 --function-name dev-irn-${params.CLIENT_NAME}-csv-json --query \"Versions[-2].Version\" --output text", returnStdout: true).trim()
+                def latest_version = sh(script: "aws lambda list-versions-by-function --region us-east-1 --no-paginate --function-name dev-irn-${params.CLIENT_NAME}-csv-json --query \"Versions[-1].Version\" --output text", returnStdout: true).trim()
+                def older_version = sh(script: "aws lambda list-versions-by-function --region us-east-1 --no-paginate --function-name dev-irn-${params.CLIENT_NAME}-csv-json --query \"Versions[-2].Version\" --output text", returnStdout: true).trim()
 
                 sh "aws lambda update-alias --name dev-irn-demo1-csv-json-alias --function-name dev-irn-${params.CLIENT_NAME}-csv-json --function-version ${older_version} --routing-config AdditionalVersionWeights={\"${latest_version}\"=\"${env.traffic_weight}\"}"
 
