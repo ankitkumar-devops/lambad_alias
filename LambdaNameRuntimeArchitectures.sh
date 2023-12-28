@@ -21,4 +21,6 @@ for function_name in $lambda_functions; do
     echo "------------------------"
 done
 
-echo "Data exported to $csv_file"          
+echo "Data exported to $csv_file" 
+# if we need to output the date in the table format
+column -s, -t lambda_functions.csv
