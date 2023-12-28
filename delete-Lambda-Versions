@@ -1,0 +1,43 @@
+import boto3
+from datetime import datetime, timedelta
+
+def lambda_handler(event, context):
+    region = 'us-east-1'  # Set your desired region
+    client = boto3.client("lambda", region_name=region)
+    
+    try:
+        functions = client.list_functions()["Functions"]
+
+        for function in functions:
+            function_name = function["FunctionName"]
+            versions = client.list_versions_by_function(FunctionName=function_name)["Versions"]
+
+            older_versions = get_old_versions(versions)
+            delete_old_versions(client, function_name, older_versions)
+
+    except Exception as e:
+        print(f"Error: {str(e)}")
+
+def get_old_versions(versions):
+    older_versions = []
+    current_time = datetime.utcnow()
+
+    for version in versions:
+        if version["Version"] != "$LATEST":
+            last_modified_str = version["LastModified"]
+            
+            # Adjust the timestamp format
+            last_modified_time = datetime.strptime(last_modified_str, "%Y-%m-%dT%H:%M:%S.%f+0000")
+            
+            age = current_time - last_modified_time
+
+            # Keep versions older than 2 days
+            if age.days > 1:
+                older_versions.append({"FunctionName": version["FunctionName"], "Version": version["Version"]})
+
+    return older_versions
+
+def delete_old_versions(client, function_name, versions_to_delete):
+    for version in versions_to_delete:
+        response = client.delete_function(FunctionName=function_name, Qualifier=version["Version"])
+        print(f"FunctionName: {function_name}, Version: {version['Version']}, Deleted response: {response}")
