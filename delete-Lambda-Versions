@@ -1,43 +1,125 @@
 import boto3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import random
 
-def lambda_handler(event, context):
-    region = 'us-east-1'  # Set your desired region
-    client = boto3.client("lambda", region_name=region)
-    
-    try:
-        functions = client.list_functions()["Functions"]
+lambda_client = boto3.client('lambda', region_name='us-east-1')
 
-        for function in functions:
-            function_name = function["FunctionName"]
-            versions = client.list_versions_by_function(FunctionName=function_name)["Versions"]
+functions = []
 
-            older_versions = get_old_versions(versions)
-            delete_old_versions(client, function_name, older_versions)
 
-    except Exception as e:
-        print(f"Error: {str(e)}")
+def list_functions():
+    print('Listing all available functions')
+    all_functions = []
 
-def get_old_versions(versions):
-    older_versions = []
-    current_time = datetime.utcnow()
+    response = lambda_client.list_functions(MaxItems=10)
+
+    while 'Functions' in response:
+        all_functions.extend(response['Functions'])
+        if 'NextMarker' in response:
+            response = lambda_client.list_functions(MaxItems=10, Marker=response['NextMarker'])
+        else:
+            break
+
+    return [function['FunctionArn'] for function in all_functions]
+
+
+def list_versions(func_arn):
+    print(f'Listing versions for function: {func_arn}')
+    all_versions = []
+
+    response = lambda_client.list_versions_by_function(FunctionName=func_arn, MaxItems=20)
+
+    while 'Versions' in response:
+        all_versions.extend(response['Versions'])
+        if 'NextMarker' in response:
+            response = lambda_client.list_versions_by_function(
+                FunctionName=func_arn, MaxItems=20, Marker=response['NextMarker']
+            )
+        else:
+            break
+
+    return [version['Version'] for version in all_versions if version['Version'] != '$LATEST']
+
+
+def list_aliased_versions(func_arn):
+    print(f'Listing aliases for function: {func_arn}')
+    all_aliases = []
+
+    response = lambda_client.list_aliases(FunctionName=func_arn, MaxItems=20)
+
+    while 'Aliases' in response:
+        all_aliases.extend(response['Aliases'])
+        if 'NextMarker' in response:
+            response = lambda_client.list_aliases(FunctionName=func_arn, MaxItems=20, Marker=response['NextMarker'])
+        else:
+            break
+
+    return [alias['FunctionVersion'] for alias in all_aliases]
+
+
+def delete_version(func_arn, version):
+    print(f'Deleting [{func_arn}] version [{version}]')
+    lambda_client.delete_function(FunctionName=func_arn, Qualifier=version)
+
+
+def get_version_creation_date(func_arn, version):
+    version_details = lambda_client.get_function(FunctionName=func_arn, Qualifier=version)
+    version_creation_date_str = version_details['Configuration']['LastModified']
+    version_creation_date = datetime.strptime(version_creation_date_str, "%Y-%m-%dT%H:%M:%S.%f+0000")
+    return version_creation_date
+
+def clean_func(func_arn):
+    print(f'Cleaning function: {func_arn}')
+    aliased_versions = list_aliased_versions(func_arn)
+    print('Found aliased versions:\n', aliased_versions)
+
+    versions = list_versions(func_arn)
+    print('Found versions:\n', versions)
+
+    current_date = datetime.now(timezone.utc)
+
+    # Sort versions based on creation date
+    versions.sort(key=lambda v: get_version_creation_date(func_arn, v))
+
+    # Keep the latest 5 versions
+    versions_to_keep = versions[-5:]
 
     for version in versions:
-        if version["Version"] != "$LATEST":
-            last_modified_str = version["LastModified"]
-            
-            # Adjust the timestamp format
-            last_modified_time = datetime.strptime(last_modified_str, "%Y-%m-%dT%H:%M:%S.%f+0000")
-            
-            age = current_time - last_modified_time
+        if version not in aliased_versions:
+            version_details = lambda_client.get_function(FunctionName=func_arn, Qualifier=version)
 
-            # Keep versions older than 2 days
-            if age.days > 1:
-                older_versions.append({"FunctionName": version["FunctionName"], "Version": version["Version"]})
+            version_creation_date_str = version_details['Configuration']['LastModified']
+            version_creation_date = datetime.strptime(version_creation_date_str, "%Y-%m-%dT%H:%M:%S.%f+0000")
+            version_creation_date = version_creation_date.replace(tzinfo=timezone.utc)
 
-    return older_versions
+            age_in_days = (current_date - version_creation_date).days
 
-def delete_old_versions(client, function_name, versions_to_delete):
-    for version in versions_to_delete:
-        response = client.delete_function(FunctionName=function_name, Qualifier=version["Version"])
-        print(f"FunctionName: {function_name}, Version: {version['Version']}, Deleted response: {response}")
+            if version in versions_to_keep or age_in_days < 1:
+                print(f'Keeping version [{version}] created {abs(age_in_days)} days ago.')
+            elif 1 < age_in_days <= 1:
+                print(f'Keeping version [{version}] created {age_in_days} days ago.')
+            else:
+                print(f'Deleting version [{version}] created {age_in_days} days ago.')
+                delete_version(func_arn, version)
+
+def clean():
+    global functions
+
+    if not functions:
+        functions = list_functions()
+
+    to_clean = list(functions)
+    print(f'{len(to_clean)} functions to clean:\n', to_clean)
+
+    for func in to_clean:
+        clean_func(func)
+        functions.remove(func)
+
+
+def lambda_handler(event, context):
+    try:
+        clean()
+        return {'statusCode': 200, 'body': 'Cleanup completed successfully!'}
+    except Exception as e:
+        print(f'Error during cleanup: {e}')
+        return {'statusCode': 500, 'body': 'Error during cleanup. Check logs for details.'}
