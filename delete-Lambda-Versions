@@ -94,9 +94,9 @@ def clean_func(func_arn):
 
             age_in_days = (current_date - version_creation_date).days
 
-            if version in versions_to_keep or age_in_days < 1:
+            if version in versions_to_keep or age_in_days < 90:
                 print(f'Keeping version [{version}] created {abs(age_in_days)} days ago.')
-            elif 1 < age_in_days <= 1:
+            elif age_in_days == 90:
                 print(f'Keeping version [{version}] created {age_in_days} days ago.')
             else:
                 print(f'Deleting version [{version}] created {age_in_days} days ago.')
